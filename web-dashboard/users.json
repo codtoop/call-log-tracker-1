@@ -4,14 +4,6 @@
     "role": "AGENT"
   },
   {
-    "username": "admin",
-    "role": "AGENT"
-  },
-  {
-    "username": "Ismahan_lanani          ",
-    "role": "AGENT"
-  },
-  {
     "username": "Kerirem_Mounia",
     "role": "AGENT"
   },
@@ -24,10 +16,6 @@
     "role": "AGENT"
   },
   {
-    "username": "admin2",
-    "role": "AGENT"
-  },
-  {
     "username": "test",
     "role": "AGENT"
   },
@@ -37,6 +25,46 @@
   },
   {
     "username": "Takoua_Boumahdi",
+    "role": "AGENT"
+  },
+  {
+    "username": "admin",
+    "role": "ADMIN"
+  },
+  {
+    "username": "Larbes_djedjiga",
+    "role": "AGENT"
+  },
+  {
+    "username": "admin1",
+    "role": "ADMIN"
+  },
+  {
+    "username": "lilya_naili2",
+    "role": "AGENT"
+  },
+  {
+    "username": "lilya_naili",
+    "role": "AGENT"
+  },
+  {
+    "username": "Ismahan_lanani2",
+    "role": "AGENT"
+  },
+  {
+    "username": "Ismahan_lanani",
+    "role": "AGENT"
+  },
+  {
+    "username": "kerirem_mounia",
+    "role": "AGENT"
+  },
+  {
+    "username": "Hind_Touati",
+    "role": "AGENT"
+  },
+  {
+    "username": "test2",
     "role": "AGENT"
   }
 ]

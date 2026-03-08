@@ -54,31 +54,24 @@ export async function POST(request: Request) {
 
         if (validLogsData.length === 1) {
             const singleLog = validLogsData[0];
-            const existingLog = await prisma.callLog.findFirst({
-                where: {
-                    phoneNumber: singleLog.phoneNumber,
-                    type: singleLog.type,
-                    agentId: singleLog.agentId,
-                    timestamp: {
-                        gte: new Date(singleLog.timestamp.getTime() - 10000),
-                        lte: new Date(singleLog.timestamp.getTime() + 10000)
+            try {
+                const log = await prisma.callLog.create({
+                    data: singleLog,
+                    include: {
+                        agent: {
+                            select: { username: true }
+                        }
                     }
+                });
+                return NextResponse.json({ success: true, log }, { status: 201 });
+            } catch (error: any) {
+                // Prisma error code P2002: Unique constraint failed
+                if (error.code === 'P2002') {
+                    // Gracefully ignore duplicate
+                    return NextResponse.json({ success: true, log: singleLog, duplicate: true }, { status: 200 });
                 }
-            });
-
-            if (existingLog) {
-                return NextResponse.json({ success: true, log: existingLog, duplicate: true }, { status: 200 });
+                throw error;
             }
-
-            const log = await prisma.callLog.create({
-                data: singleLog,
-                include: {
-                    agent: {
-                        select: { username: true }
-                    }
-                }
-            });
-            return NextResponse.json({ success: true, log }, { status: 201 });
         } else {
             // 1st pass: deduplicate within the batch itself using a memory Set
             const seen = new Set<string>();
@@ -91,28 +84,12 @@ export async function POST(request: Request) {
                 return true;
             });
 
-            // 2nd pass: filter duplicates that already exist in the DB
-            const uniqueLogsToInsert = [];
-            for (const logItem of deduplicatedBatch) {
-                const existingLog = await prisma.callLog.findFirst({
-                    where: {
-                        phoneNumber: logItem.phoneNumber,
-                        type: logItem.type,
-                        agentId: logItem.agentId,
-                        timestamp: {
-                            gte: new Date(logItem.timestamp.getTime() - 10000),
-                            lte: new Date(logItem.timestamp.getTime() + 10000)
-                        }
-                    }
-                });
-                if (!existingLog) {
-                    uniqueLogsToInsert.push(logItem);
-                }
-            }
-
-            if (uniqueLogsToInsert.length > 0) {
+            // In PostgreSQL, createMany with skipDuplicates: true allows atomic insertion
+            // of the entire batch while silently ignoring rows that violate the @@unique constraint
+            if (deduplicatedBatch.length > 0) {
                 const result = await prisma.callLog.createMany({
-                    data: uniqueLogsToInsert,
+                    data: deduplicatedBatch,
+                    skipDuplicates: true, // Native Postgres ON CONFLICT DO NOTHING
                 });
                 return NextResponse.json({ success: true, count: result.count, batch: true }, { status: 201 });
             } else {
@@ -135,6 +112,10 @@ export async function GET(request: Request) {
         const limit = parseInt(searchParams.get('limit') || '10', 10);
         let agentId = searchParams.get('agentId');
 
+        // Parse date filters, defaulting to last 24 hours if completely omitted
+        let startDate = searchParams.get('startDate');
+        let endDate = searchParams.get('endDate');
+
         const payload = getAuthPayloadFromRequest(request);
         if (!payload) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -146,9 +127,33 @@ export async function GET(request: Request) {
         }
 
         const skip = (page - 1) * limit;
-        const whereClause = agentId ? { agentId } : undefined;
 
-        const [logs, totalLogs] = await Promise.all([
+        // Build Prisma where clause
+        const whereClause: any = {};
+        if (agentId) {
+            whereClause.agentId = agentId;
+        }
+
+        if (startDate || endDate) {
+            whereClause.timestamp = {};
+            if (startDate) {
+                // Ensure we start at the very beginning of the start date in UTC
+                const startObj = new Date(`${startDate}T00:00:00.000Z`);
+                whereClause.timestamp.gte = startObj;
+            }
+            if (endDate) {
+                // Ensure we end at the very end of the end date in UTC
+                const endObj = new Date(`${endDate}T23:59:59.999Z`);
+                whereClause.timestamp.lte = endObj;
+            }
+        } else {
+            // Default to last 24 hours if no dates provided at all
+            const defaultStart = new Date();
+            defaultStart.setHours(defaultStart.getHours() - 24);
+            whereClause.timestamp = { gte: defaultStart };
+        }
+
+        const [logs, totalLogs, allFilteredLogs] = await Promise.all([
             prisma.callLog.findMany({
                 where: whereClause,
                 orderBy: { timestamp: 'desc' },
@@ -160,12 +165,25 @@ export async function GET(request: Request) {
                     }
                 }
             }),
-            prisma.callLog.count({ where: whereClause })
+            prisma.callLog.count({ where: whereClause }),
+            // Fetch a lightweight unpaginated list of ALL filtered logs for strictly accurate Graph and Stats rendering
+            prisma.callLog.findMany({
+                where: whereClause,
+                select: {
+                    type: true,
+                    duration: true,
+                    ringingDuration: true,
+                    timestamp: true,
+                    phoneNumber: true,
+                    agentId: true
+                },
+                orderBy: { timestamp: 'asc' }
+            })
         ]);
 
         const totalPages = Math.max(1, Math.ceil(totalLogs / limit));
 
-        const response = NextResponse.json({ success: true, logs, totalLogs, totalPages, page, limit });
+        const response = NextResponse.json({ success: true, logs, totalLogs, totalPages, page, limit, allFilteredLogs });
         response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
         response.headers.set('Pragma', 'no-cache');
         response.headers.set('Expires', '0');

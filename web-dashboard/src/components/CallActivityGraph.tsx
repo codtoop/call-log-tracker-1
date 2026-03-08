@@ -20,35 +20,80 @@ export default function CallActivityGraph({ logs, currentDateLimit }: CallActivi
 
         const incomingData: { x: number; y: number; meta: any }[] = [];
         const outgoingData: { x: number; y: number; meta: any }[] = [];
-        const missedData: { x: number; y: number; meta: any }[] = [];
+        const incomingRinging: { x: number; y: number; meta: any }[] = [];
+        const incomingTalk: { x: number; y: number; meta: any }[] = [];
+        const outgoingRinging: { x: number; y: number; meta: any }[] = [];
+        const outgoingTalk: { x: number; y: number; meta: any }[] = [];
+        const missedRinging: { x: number; y: number; meta: any }[] = [];
 
         logs.forEach((log) => {
-            const timeMs = new Date(log.timestamp).getTime();
-            const point = {
-                x: timeMs,
-                y: 1, // y=1 ensures all bars are the same height
-                meta: {
-                    phoneNumber: log.phoneNumber || 'Unknown',
-                    type: log.type,
-                    duration: log.duration || 0,
-                    timestamp: log.timestamp,
-                }
-            };
+            const timestamp = new Date(log.timestamp).getTime();
 
-            if (log.type === 'INCOMING') incomingData.push(point);
-            else if (log.type === 'OUTGOING') outgoingData.push(point);
-            else if (log.type === 'MISSED') missedData.push(point);
+            // For a timeline graph, we want each event to be represented by a bar of fixed height (y=1).
+            // If a call has both ringing and talking phases, we'll represent them as two stacked bars
+            // at the same timestamp, each with y=1. This means the total height for that timestamp will be 2.
+            // The actual duration information will be in the tooltip.
+
+            // Ringing phase
+            if (log.ringingDuration > 0 && log.type !== 'MISSED') { // Missed calls don't have a separate 'ringing' bar, they are just 'missed'
+                incomingRinging.push({
+                    x: timestamp,
+                    y: 1,
+                    meta: {
+                        ...log,
+                        phase: 'Ringing',
+                        duration: log.ringingDuration,
+                        // Adjust timestamp for ringing phase if needed, or keep original for alignment
+                    }
+                });
+            }
+
+            // Talking phase (or the main event for missed calls)
+            if (log.type === 'INCOMING' && log.duration > 0) {
+                incomingTalk.push({
+                    x: timestamp,
+                    y: 1,
+                    meta: {
+                        ...log,
+                        phase: 'Talking',
+                        // For talking, the duration is the call duration itself
+                    }
+                });
+            } else if (log.type === 'OUTGOING' && log.duration > 0) {
+                outgoingTalk.push({
+                    x: timestamp,
+                    y: 1,
+                    meta: {
+                        ...log,
+                        phase: 'Talking',
+                    }
+                });
+            } else if (log.type === 'MISSED') {
+                missedRinging.push({ // Renamed to missedRinging for consistency, but represents the missed event
+                    x: timestamp,
+                    y: 1,
+                    meta: {
+                        ...log,
+                        phase: 'Missed',
+                        duration: log.ringingDuration || 0, // Missed calls might have a ringing duration
+                    }
+                });
+            }
         });
 
         // Sort data points chronologically for ApexCharts
-        incomingData.sort((a, b) => a.x - b.x);
-        outgoingData.sort((a, b) => a.x - b.x);
-        missedData.sort((a, b) => a.x - b.x);
+        incomingRinging.sort((a, b) => a.x - b.x);
+        incomingTalk.sort((a, b) => a.x - b.x);
+        outgoingRinging.sort((a, b) => a.x - b.x);
+        outgoingTalk.sort((a, b) => a.x - b.x);
+        missedRinging.sort((a, b) => a.x - b.x);
 
         return [
-            { name: 'INCOMING', data: incomingData },
-            { name: 'OUTGOING', data: outgoingData },
-            { name: 'MISSED', data: missedData },
+            { name: 'INCOMING Ringing', data: incomingRinging },
+            { name: 'INCOMING Talking', data: incomingTalk },
+            { name: 'OUTGOING Ringing', data: outgoingRinging },
+            { name: 'OUTGOING Talking', data: outgoingTalk },
+            { name: 'MISSED', data: missedRinging },
         ];
     }, [logs]);
 
@@ -57,6 +102,7 @@ export default function CallActivityGraph({ logs, currentDateLimit }: CallActivi
             type: 'bar',
             height: 250,
             background: 'transparent',
+            stacked: true, // Enable stacking
             events: {
                 dataPointSelection: (event: any, chartContext: any, config: any) => {
                     const data = config.w.config.series[config.seriesIndex].data[config.dataPointIndex];
@@ -84,7 +130,13 @@ export default function CallActivityGraph({ logs, currentDateLimit }: CallActivi
             },
             fontFamily: 'inherit',
         },
-        colors: ['#5b86b5', '#0073e6', '#ac7272'], // Incoming, Outgoing, Missed
+        colors: [
+            '#87CEEB', // INCOMING Ringing (light blue)
+            '#5b86b5', // INCOMING Talking (darker blue)
+            '#FFD700', // OUTGOING Ringing (gold)
+            '#0073e6', // OUTGOING Talking (darker blue)
+            '#ac7272'  // MISSED (reddish)
+        ],
         plotOptions: {
             bar: {
                 horizontal: false,
@@ -166,6 +218,9 @@ export default function CallActivityGraph({ logs, currentDateLimit }: CallActivi
                 const startTime = new Date(data.timestamp);
                 const startTimeStr = startTime.toTimeString().split(' ')[0]; // HH:mm:ss
 
+                // Show the duration for the specific phase being hovered over
+                const phaseDuration = data.duration || 0;
+
                 const endTime = new Date(startTime.getTime() + data.duration * 1000);
                 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
                 const month = months[endTime.getMonth()];
@@ -183,10 +238,11 @@ export default function CallActivityGraph({ logs, currentDateLimit }: CallActivi
                             ${data.phoneNumber}
                         </div>
                         <div style="display: flex; flex-direction: column; gap: 4px;">
-                            <div>Call Type=${data.type}</div>
+                            <div>Type: ${data.type}</div>
+                            <div>Phase: <strong>${data.phase}</strong></div>
                             <div>start_time=${startTimeStr}</div>
-                            <div>end_time=${endTimeFormatted}</div>
-                            <div>Duration (s)=${data.duration}</div>
+                            ${data.phase === 'Talking' ? `<div>end_time=${endTimeFormatted}</div>` : ''}
+                            <div>Phase Length: <strong>${phaseDuration}s</strong></div>
                         </div>
                     </div>
                 `;

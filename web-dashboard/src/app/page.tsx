@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import CallStatistics from '../components/CallStatistics';
 import CallActivityGraph from '../components/CallActivityGraph';
 
-export default function Home() {
+function DashboardContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [token, setToken] = useState<string | null>(null);
   const [role, setRole] = useState<string>('');
   const [username, setUsername] = useState('');
@@ -13,15 +16,24 @@ export default function Home() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Pagination State
-  const [limit, setLimit] = useState<number>(10);
-  const [page, setPage] = useState<number>(1);
+  const [limit, setLimit] = useState<number>(() => parseInt(searchParams.get('limit') || '10', 10));
+  const [page, setPage] = useState<number>(() => parseInt(searchParams.get('page') || '1', 10));
   const [totalPages, setTotalPages] = useState<number>(1);
 
   // Filters State
-  const [selectedAgent, setSelectedAgent] = useState<string>('');
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
+  const defaultStartDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1); // default to last 24h
+    return d.toISOString().split('T')[0];
+  }, []);
+  const defaultEndDate = useMemo(() => new Date().toISOString().split('T')[0], []);
+
+  const [selectedAgent, setSelectedAgent] = useState<string>(searchParams.get('agentId') || '');
+  const [startDate, setStartDate] = useState<string>(searchParams.get('startDate') || defaultStartDate);
+  const [endDate, setEndDate] = useState<string>(searchParams.get('endDate') || defaultEndDate);
+
+  // Storage for accurate graphing & stats (unpaginated)
+  const [allFilteredLogs, setAllFilteredLogs] = useState<any[]>([]);
 
   // Add Agent State
   const [isAddingAgent, setIsAddingAgent] = useState(false);
@@ -38,20 +50,34 @@ export default function Home() {
   const [renameAgentLoading, setRenameAgentLoading] = useState(false);
   const [allAgents, setAllAgents] = useState<any[]>([]);
 
-  // Computed Derived Data for Filters
-  const uniqueAgents = Array.from(new Set(logs.map(log => log.agent?.username || log.agentId || 'Unknown'))).sort();
+  // Computed Derived Data for Filters (No longer doing client-side filtering)
+  const filteredLogs = logs; // Keeping the name to minimize diff, but it's server-filtered now.
 
-  const filteredLogs = useMemo(() => {
-    return logs.filter(log => {
-      const matchesAgent = selectedAgent === '' || (log.agent?.username || log.agentId || 'Unknown') === selectedAgent;
-
-      const logDate = new Date(log.timestamp).toISOString().split('T')[0];
-      const matchesStartDate = startDate === '' || logDate >= startDate;
-      const matchesEndDate = endDate === '' || logDate <= endDate;
-
-      return matchesAgent && matchesStartDate && matchesEndDate;
+  const updateUrlParams = (newParams: Record<string, string>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    Object.entries(newParams).forEach(([key, value]) => {
+      if (value) {
+        params.set(key, value);
+      } else {
+        params.delete(key);
+      }
     });
-  }, [logs, selectedAgent, startDate, endDate]);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  };
+
+  // Fetch all agents for the dropdown
+  useEffect(() => {
+    if (role === 'ADMIN' && token) {
+      fetch('/api/agents', { headers: { 'Authorization': `Bearer ${token}` } })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            setAllAgents(data.agents);
+          }
+        })
+        .catch(err => console.error('Failed to load agents', err));
+    }
+  }, [role, token]);
 
   useEffect(() => {
     const savedToken = localStorage.getItem('token');
@@ -59,16 +85,16 @@ export default function Home() {
     if (savedToken) {
       setToken(savedToken);
       if (savedRole) setRole(savedRole);
-      fetchLogs(savedToken, limit, page);
+      fetchLogs(savedToken);
 
       // Instantly pull new logs every 3 seconds
       const interval = setInterval(() => {
-        fetchLogs(savedToken, limit, page);
+        fetchLogs(savedToken);
       }, 3000);
 
       return () => clearInterval(interval);
     }
-  }, [limit, page]);
+  }, [limit, page, selectedAgent, startDate, endDate]); // Added filter dependencies
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,7 +116,7 @@ export default function Home() {
         localStorage.setItem('role', data.role);
         setToken(data.token);
         setRole(data.role);
-        fetchLogs(data.token, limit, page);
+        fetchLogs(data.token);
       } else {
         setLoginError(data.error || 'Login failed');
       }
@@ -101,9 +127,17 @@ export default function Home() {
     }
   };
 
-  const fetchLogs = async (authToken: string, currentLimit: number, currentPage: number) => {
+  const fetchLogs = async (authToken: string) => {
     try {
-      const res = await fetch(`/api/logs?limit=${currentLimit}&page=${currentPage}&t=${Date.now()}`, {
+      const params = new URLSearchParams();
+      params.set('limit', limit.toString());
+      params.set('page', page.toString());
+      if (selectedAgent) params.set('agentId', selectedAgent);
+      if (startDate) params.set('startDate', startDate);
+      if (endDate) params.set('endDate', endDate);
+      params.set('t', Date.now().toString());
+
+      const res = await fetch(`/api/logs?${params.toString()}`, {
         cache: 'no-store',
         headers: {
           'Authorization': `Bearer ${authToken}`,
@@ -113,6 +147,9 @@ export default function Home() {
       const data = await res.json();
       if (data.success) {
         setTotalPages(data.totalPages || 1);
+        if (data.allFilteredLogs) {
+          setAllFilteredLogs(data.allFilteredLogs);
+        }
         setLogs(prevLogs => {
           // Check if the IDs of the returned logs perfectly match the existing logs
           // Sort them first to avoid non-deterministic database ordering forcing a false update
@@ -346,7 +383,7 @@ export default function Home() {
           <div className="flex justify-between items-center mb-6">
             <h1 className="text-2xl font-semibold">Recent Call Logs</h1>
             <button
-              onClick={() => fetchLogs(token, limit, page)}
+              onClick={() => fetchLogs(token as string)}
               className="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm transition-colors border border-gray-700"
             >
               Refresh
@@ -363,7 +400,12 @@ export default function Home() {
                 </label>
                 <select
                   value={selectedAgent}
-                  onChange={(e) => setSelectedAgent(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSelectedAgent(val);
+                    setPage(1);
+                    updateUrlParams({ agentId: val, page: '1' });
+                  }}
                   className="w-full bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-md focus:ring-indigo-500 focus:border-indigo-500 block p-2.5 appearance-none"
                   style={{
                     backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
@@ -373,8 +415,8 @@ export default function Home() {
                   }}
                 >
                   <option value="">All Agents</option>
-                  {uniqueAgents.map(agent => (
-                    <option key={agent} value={agent}>{agent}</option>
+                  {allAgents.map(agent => (
+                    <option key={agent.id} value={agent.id}>{agent.username}</option>
                   ))}
                 </select>
               </div>
@@ -389,14 +431,22 @@ export default function Home() {
                 <input
                   type="date"
                   value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
+                  onChange={(e) => {
+                    setStartDate(e.target.value);
+                    setPage(1);
+                    updateUrlParams({ startDate: e.target.value, page: '1' });
+                  }}
                   className="w-1/2 bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-md focus:ring-indigo-500 focus:border-indigo-500 block p-2.5"
                 />
                 <span className="text-gray-500 self-center">to</span>
                 <input
                   type="date"
                   value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
+                  onChange={(e) => {
+                    setEndDate(e.target.value);
+                    setPage(1);
+                    updateUrlParams({ endDate: e.target.value, page: '1' });
+                  }}
                   className="w-1/2 bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-md focus:ring-indigo-500 focus:border-indigo-500 block p-2.5"
                 />
               </div>
@@ -411,8 +461,10 @@ export default function Home() {
                 <select
                   value={limit}
                   onChange={(e) => {
-                    setLimit(Number(e.target.value));
+                    const newLimit = Number(e.target.value);
+                    setLimit(newLimit);
                     setPage(1);
+                    updateUrlParams({ limit: newLimit.toString(), page: '1' });
                   }}
                   className="bg-gray-800 border border-gray-700 text-white text-sm rounded-md focus:ring-indigo-500 focus:border-indigo-500 p-1.5"
                 >
@@ -425,7 +477,11 @@ export default function Home() {
 
               <div className="flex items-center space-x-4">
                 <button
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  onClick={() => {
+                    const p = Math.max(1, page - 1);
+                    setPage(p);
+                    updateUrlParams({ page: p.toString() });
+                  }}
                   disabled={page === 1}
                   className="px-3 py-1 bg-gray-800 text-gray-300 rounded-md disabled:opacity-50 hover:bg-gray-700 transition-colors"
                 >
@@ -435,7 +491,11 @@ export default function Home() {
                   Page {page} of {totalPages}
                 </span>
                 <button
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  onClick={() => {
+                    const p = Math.min(totalPages, page + 1);
+                    setPage(p);
+                    updateUrlParams({ page: p.toString() });
+                  }}
                   disabled={page === totalPages}
                   className="px-3 py-1 bg-gray-800 text-gray-300 rounded-md disabled:opacity-50 hover:bg-gray-700 transition-colors"
                 >
@@ -497,13 +557,13 @@ export default function Home() {
             </table>
           </div>
 
-          {/* Call Statistics Overview */}
+          {/* Call Statistics Overview - Using allFilteredLogs for accurately plotted charts */}
           <div className="mb-6">
-            <CallStatistics logs={filteredLogs} />
+            <CallStatistics logs={allFilteredLogs} />
           </div>
 
-          {/* Call Activity Graph */}
-          <CallActivityGraph logs={filteredLogs} currentDateLimit={startDate || undefined} />
+          {/* Call Activity Graph - Using allFilteredLogs */}
+          <CallActivityGraph logs={allFilteredLogs} currentDateLimit={startDate || undefined} />
         </div>
       </main>
 
@@ -661,5 +721,13 @@ export default function Home() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-950 flex items-center justify-center text-white">Loading...</div>}>
+      <DashboardContent />
+    </Suspense>
   );
 }

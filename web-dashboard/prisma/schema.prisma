@@ -29,4 +29,6 @@ model CallLog {
   agentId     String
   agent       User     @relation(fields: [agentId], references: [id])
   createdAt   DateTime @default(now())
+
+  @@unique([agentId, phoneNumber, type, timestamp])
 }
