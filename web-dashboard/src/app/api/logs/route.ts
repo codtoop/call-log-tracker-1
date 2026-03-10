@@ -115,6 +115,7 @@ export async function GET(request: Request) {
         // Parse date filters, defaulting to last 24 hours if completely omitted
         let startDate = searchParams.get('startDate');
         let endDate = searchParams.get('endDate');
+        let phoneNumber = searchParams.get('phoneNumber');
 
         const payload = getAuthPayloadFromRequest(request);
         if (!payload) {
@@ -132,6 +133,9 @@ export async function GET(request: Request) {
         const whereClause: any = {};
         if (agentId) {
             whereClause.agentId = agentId;
+        }
+        if (phoneNumber) {
+            whereClause.phoneNumber = { contains: phoneNumber };
         }
 
         if (startDate || endDate) {

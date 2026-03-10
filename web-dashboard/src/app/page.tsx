@@ -12,6 +12,7 @@ function DashboardContent() {
   const [role, setRole] = useState<string>('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -29,6 +30,7 @@ function DashboardContent() {
   const defaultEndDate = useMemo(() => new Date().toISOString().split('T')[0], []);
 
   const [selectedAgent, setSelectedAgent] = useState<string>(searchParams.get('agentId') || '');
+  const [phoneNumber, setPhoneNumber] = useState<string>(searchParams.get('phoneNumber') || '');
   const [startDate, setStartDate] = useState<string>(searchParams.get('startDate') || defaultStartDate);
   const [endDate, setEndDate] = useState<string>(searchParams.get('endDate') || defaultEndDate);
 
@@ -39,6 +41,7 @@ function DashboardContent() {
   const [isAddingAgent, setIsAddingAgent] = useState(false);
   const [newAgentUsername, setNewAgentUsername] = useState('');
   const [newAgentPassword, setNewAgentPassword] = useState('');
+  const [showNewAgentPassword, setShowNewAgentPassword] = useState(false);
   const [addAgentStatus, setAddAgentStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
   const [addAgentLoading, setAddAgentLoading] = useState(false);
 
@@ -66,35 +69,43 @@ function DashboardContent() {
   };
 
   // Fetch all agents for the dropdown
-  useEffect(() => {
-    if (role === 'ADMIN' && token) {
-      fetch('/api/agents', { headers: { 'Authorization': `Bearer ${token}` } })
-        .then(res => res.json())
-        .then(data => {
-          if (data.success) {
-            setAllAgents(data.agents);
-          }
-        })
-        .catch(err => console.error('Failed to load agents', err));
+  const fetchAgents = async (authToken: string) => {
+    try {
+      const res = await fetch('/api/agents', { headers: { 'Authorization': `Bearer ${authToken}` } });
+      const data = await res.json();
+      if (data.success) {
+        setAllAgents(data.agents);
+      }
+    } catch (err) {
+      console.error('Failed to load agents', err);
     }
-  }, [role, token]);
+  };
 
+  // 1. Session Restoration on Mount
   useEffect(() => {
     const savedToken = localStorage.getItem('token');
     const savedRole = localStorage.getItem('role');
     if (savedToken) {
       setToken(savedToken);
       if (savedRole) setRole(savedRole);
-      fetchLogs(savedToken);
-
-      // Instantly pull new logs every 3 seconds
-      const interval = setInterval(() => {
-        fetchLogs(savedToken);
-      }, 3000);
-
-      return () => clearInterval(interval);
     }
-  }, [limit, page, selectedAgent, startDate, endDate]); // Added filter dependencies
+  }, []);
+
+  // 2. Data Fetching and Polling
+  useEffect(() => {
+    if (!token) return;
+
+    fetchLogs(token);
+    if (role === 'ADMIN') fetchAgents(token);
+
+    // Instantly pull new logs every 3 seconds
+    const interval = setInterval(() => {
+      fetchLogs(token);
+      if (role === 'ADMIN') fetchAgents(token);
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [token, role, limit, page, selectedAgent, startDate, endDate, phoneNumber]); // Added token to dependencies
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,7 +127,6 @@ function DashboardContent() {
         localStorage.setItem('role', data.role);
         setToken(data.token);
         setRole(data.role);
-        fetchLogs(data.token);
       } else {
         setLoginError(data.error || 'Login failed');
       }
@@ -133,6 +143,7 @@ function DashboardContent() {
       params.set('limit', limit.toString());
       params.set('page', page.toString());
       if (selectedAgent) params.set('agentId', selectedAgent);
+      if (phoneNumber) params.set('phoneNumber', phoneNumber);
       if (startDate) params.set('startDate', startDate);
       if (endDate) params.set('endDate', endDate);
       params.set('t', Date.now().toString());
@@ -312,16 +323,27 @@ function DashboardContent() {
                   onChange={(e) => setUsername(e.target.value)}
                 />
               </div>
-              <div>
+              <div className="relative">
                 <input
                   name="password"
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   required
-                  className="appearance-none rounded-none relative block w-full px-3 py-3 border border-gray-700 bg-gray-800 text-white rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                  className="appearance-none rounded-none relative block w-full px-3 py-3 border border-gray-700 bg-gray-800 text-white rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm pr-10"
                   placeholder="Password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-white z-20"
+                >
+                  {showPassword ? (
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+                  ) : (
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                  )}
+                </button>
               </div>
             </div>
 
@@ -383,15 +405,43 @@ function DashboardContent() {
           <div className="flex justify-between items-center mb-6">
             <h1 className="text-2xl font-semibold">Recent Call Logs</h1>
             <button
-              onClick={() => fetchLogs(token as string)}
+              onClick={() => {
+                fetchLogs(token as string);
+                if (role === 'ADMIN') fetchAgents(token as string);
+              }}
               className="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm transition-colors border border-gray-700"
             >
               Refresh
             </button>
           </div>
 
+          {/* Agent Status Area */}
+          {role === 'ADMIN' && allAgents.length > 0 && (
+            <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 shadow-sm mb-6">
+              <label className="flex items-center text-sm font-medium text-green-400 mb-4">
+                <span className="mr-2">🟢</span> Agent Status Insights
+              </label>
+              <div className="flex flex-wrap gap-4">
+                {allAgents.map(agent => {
+                  const isOnline = agent.lastSeen && (new Date().getTime() - new Date(agent.lastSeen).getTime()) < 120000;
+                  return (
+                    <div key={agent.id} className="flex items-center bg-gray-800 px-4 py-3 rounded-lg border border-gray-700 w-auto shadow-inner">
+                      <span className={`h-3 w-3 rounded-full mr-3 shadow-sm ${isOnline ? 'bg-green-500 shadow-green-500/50' : 'bg-gray-500'}`}></span>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-semibold text-gray-200">{agent.username}</span>
+                        <span className="text-xs text-gray-500">
+                          {isOnline ? 'Online' : 'Offline'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Filters Area */}
-          <div className={`grid grid-cols-1 ${role === 'ADMIN' ? 'md:grid-cols-2' : ''} gap-6 mb-6`}>
+          <div className={`grid grid-cols-1 ${role === 'ADMIN' ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-6 mb-6`}>
             {/* Agent Filter */}
             {role === 'ADMIN' && (
               <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 shadow-sm">
@@ -421,6 +471,24 @@ function DashboardContent() {
                 </select>
               </div>
             )}
+
+            {/* Phone Number Filter */}
+            <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 shadow-sm">
+              <label className="flex items-center text-sm font-medium text-blue-400 mb-2">
+                <span className="mr-2">📱</span> Filter by Phone Number:
+              </label>
+              <input
+                type="text"
+                value={phoneNumber}
+                onChange={(e) => {
+                  setPhoneNumber(e.target.value);
+                  setPage(1);
+                  updateUrlParams({ phoneNumber: e.target.value, page: '1' });
+                }}
+                placeholder="Enter phone number..."
+                className="w-full bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-md focus:ring-indigo-500 focus:border-indigo-500 block p-2.5"
+              />
+            </div>
 
             {/* Date Range Filter */}
             <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 shadow-sm">
@@ -602,13 +670,26 @@ function DashboardContent() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-400 mb-1">Password</label>
-                <input
-                  type="password"
-                  required
-                  className="w-full px-3 py-2 border border-gray-700 bg-gray-800 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  value={newAgentPassword}
-                  onChange={(e) => setNewAgentPassword(e.target.value)}
-                />
+                <div className="relative">
+                  <input
+                    type={showNewAgentPassword ? "text" : "password"}
+                    required
+                    className="w-full px-3 py-2 border border-gray-700 bg-gray-800 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 pr-10"
+                    value={newAgentPassword}
+                    onChange={(e) => setNewAgentPassword(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewAgentPassword(!showNewAgentPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-white"
+                  >
+                    {showNewAgentPassword ? (
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+                    ) : (
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                    )}
+                  </button>
+                </div>
               </div>
 
               {addAgentStatus && (

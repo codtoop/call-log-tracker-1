@@ -1,19 +1,13 @@
-async function main() {
-    const loginRes = await fetch('http://localhost:3000/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: "Toufik", password: "password" })
-    });
-    const loginData = await loginRes.json();
-    console.log("Login:", loginData);
+const jwt = require('jsonwebtoken');
 
-    const token = loginData.token;
+const token = jwt.sign({ userId: 'something', role: 'ADMIN' }, process.env.JWT_SECRET || 'super_secret_jwt_key_change_me_in_prod', { expiresIn: '1h' });
 
-    const logsRes = await fetch('http://localhost:3000/api/logs?limit=10&page=1', {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const logsData = await logsRes.json();
-    console.log("Logs count:", logsData.logs ? logsData.logs.length : "none");
-    console.log("Response:", JSON.stringify(logsData, null, 2));
+async function testFetchAgents() {
+  const res = await fetch('http://localhost:3000/api/agents', {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const data = await res.json();
+  console.log(JSON.stringify(data, null, 2));
 }
-main();
+
+testFetchAgents().catch(console.error);

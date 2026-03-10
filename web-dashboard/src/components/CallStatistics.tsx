@@ -51,8 +51,8 @@ export default function CallStatistics({ logs }: CallStatisticsProps) {
         const avgDurationSeconds = totalCalls > 0 ? Math.floor(totalDurationSeconds / totalCalls) : 0;
         const uniqueDaysCount = uniqueDaysSet.size;
 
-        // No Call Time = Total days in dataset * 24hrs - duration. Or 0 if no logs.
-        const totalPossibleSeconds = uniqueDaysCount * 24 * 60 * 60;
+        // No Call Time = Total days in dataset * 6hrs - duration. Or 0 if no logs.
+        const totalPossibleSeconds = uniqueDaysCount * 6 * 60 * 60;
         const noCallTimeSeconds = totalPossibleSeconds > 0 ? Math.max(0, totalPossibleSeconds - totalDurationSeconds) : 0;
 
         // Helper to format SS to HHh MMm SSs

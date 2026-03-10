@@ -16,6 +16,7 @@ model User {
   password  String
   role      String    @default("AGENT") // Can be "ADMIN" or "AGENT"
   createdAt DateTime  @default(now())
+  lastSeen  DateTime  @default(now())
   callLogs  CallLog[]
 }
 

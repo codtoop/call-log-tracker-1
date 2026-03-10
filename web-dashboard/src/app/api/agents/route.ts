@@ -80,6 +80,7 @@ export async function GET(request: Request) {
                 id: true,
                 username: true,
                 createdAt: true,
+                lastSeen: true,
             },
             orderBy: {
                 username: 'asc',
