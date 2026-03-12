@@ -27,6 +27,21 @@ export async function POST(request: Request) {
 
         const token = signToken(user.id, user.role);
 
+        // Mark agent as online immediately upon login
+        await prisma.user.update({
+            where: { id: user.id },
+            data: { lastSeen: new Date() }
+        });
+
+        // Create a new login session
+        await prisma.agentSession.create({
+            data: {
+                agentId: user.id,
+                startTime: new Date(),
+                endTime: new Date()
+            }
+        });
+
         return NextResponse.json({
             success: true,
             token,

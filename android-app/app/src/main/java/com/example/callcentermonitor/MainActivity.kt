@@ -331,6 +331,8 @@ fun DashboardScreen(context: MainActivity, prefs: android.content.SharedPreferen
     val totalPages = maxOf(1, (currentTotal + limit - 1) / limit)
 
     Column(modifier = Modifier.fillMaxSize()) {
+        val coroutineScope = rememberCoroutineScope()
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -344,9 +346,31 @@ fun DashboardScreen(context: MainActivity, prefs: android.content.SharedPreferen
             )
             Button(
                 onClick = {
-                    prefs.edit().remove("token").apply()
-                    (context as? MainActivity)?.updateAuthNotification(true, "")
-                    (context as? MainActivity)?.recreate() // Quick UI refresh
+                    coroutineScope.launch(Dispatchers.IO) {
+                        // Notify the server that the agent is logging out
+                        try {
+                            val token = prefs.getString("token", "") ?: ""
+                            val serverUrl = prefs.getString("serverUrl", "") ?: "https://call-log-tracker.vercel.app"
+                            if (token.isNotEmpty()) {
+                                val client = OkHttpClient()
+                                val jsonMediaType = "application/json; charset=utf-8".toMediaType()
+                                val body = "{}".toRequestBody(jsonMediaType)
+                                val request = Request.Builder()
+                                    .url("$serverUrl/api/agent/logout")
+                                    .header("Authorization", "Bearer $token")
+                                    .post(body)
+                                    .build()
+                                client.newCall(request).execute().close()
+                            }
+                        } catch (e: Exception) {
+                            // Proceed with local logout even if server call fails
+                        }
+                        withContext(Dispatchers.Main) {
+                            prefs.edit().remove("token").apply()
+                            (context as? MainActivity)?.updateAuthNotification(true, "")
+                            (context as? MainActivity)?.recreate()
+                        }
+                    }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
             ) {
