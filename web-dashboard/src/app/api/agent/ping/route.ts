@@ -16,6 +16,12 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
+        // 1. Update the agent's lastSeen timestamp
+        await prisma.user.update({
+            where: { id: decoded.userId },
+            data: { lastSeen: new Date() }
+        });
+
         // 2. Manage the agent's session history
         const now = new Date();
         const twoMinutesAgo = new Date(now.getTime() - 120000); // 2 minutes in milliseconds
