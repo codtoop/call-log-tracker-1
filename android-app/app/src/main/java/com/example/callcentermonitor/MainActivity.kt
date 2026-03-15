@@ -243,17 +243,6 @@ fun SetupScreen(context: MainActivity) {
         )
 
         OutlinedTextField(
-            value = serverUrl,
-            onValueChange = { serverUrl = it },
-            label = { Text("Server URL") },
-            placeholder = { Text("https://your-api.com") },
-            singleLine = true,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 16.dp)
-        )
-
-        OutlinedTextField(
             value = username,
             onValueChange = { username = it },
             label = { Text("Agent Username") },
