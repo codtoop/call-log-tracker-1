@@ -15,5 +15,6 @@ data class CallLogEntity(
     val ringingDuration: Int = 0, // ringing time in seconds (manually tracked)
     val timestamp: Long,
     val agentToken: String = "",
+    val disconnectedBy: String = "UNKNOWN", // "AGENT", "CLIENT", "UNKNOWN"
     var isSynced: Boolean = false
 )

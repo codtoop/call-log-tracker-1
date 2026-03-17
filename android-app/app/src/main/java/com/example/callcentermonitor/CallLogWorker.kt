@@ -51,11 +51,13 @@ class CallLogWorker : JobIntentService() {
                 val typeColumn = cursor.getColumnIndex(CallLog.Calls.TYPE)
                 val dateColumn = cursor.getColumnIndex(CallLog.Calls.DATE)
                 val durationColumn = cursor.getColumnIndex(CallLog.Calls.DURATION)
+                val disconnectCauseColumn = cursor.getColumnIndex("disconnect_cause")
 
                 val number = cursor.getString(numberColumn)
                 val typeCode = cursor.getString(typeColumn).toInt()
                 val date = cursor.getLong(dateColumn)
                 val duration = cursor.getString(durationColumn).toInt()
+                val disconnectCauseCode = if (disconnectCauseColumn >= 0) cursor.getInt(disconnectCauseColumn) else -1
 
                 var type = "UNKNOWN"
                 when (typeCode) {
@@ -65,7 +67,20 @@ class CallLogWorker : JobIntentService() {
                     CallLog.Calls.REJECTED_TYPE -> type = "REJECTED"
                 }
 
-                Log.d("CallLogWorker", "Found Last Log: $number | $type | $duration sek")
+                Log.d("CallLogWorker", "Found Last Log: $number | $type | $duration sek | Cause: $disconnectCauseCode")
+
+                var disconnectedBy = "UNKNOWN"
+                if (disconnectCauseCode != -1) {
+                    when (disconnectCauseCode) {
+                        3 -> disconnectedBy = "AGENT" // CallLog.Calls.DISCONNECT_CAUSE_LOCAL (API 30+)
+                        2 -> disconnectedBy = "CLIENT" // CallLog.Calls.DISCONNECT_CAUSE_NORMAL (API 30+)
+                        else -> {
+                            Log.d("CallLogWorker", "Unhandled disconnectCauseCode: $disconnectCauseCode. Defaulting to UNKNOWN.")
+                        }
+                    }
+                } else {
+                    Log.d("CallLogWorker", "disconnectCauseCode is -1 (Not available on this device/call)")
+                }
 
                 // Deduplicate at insert time — check if this exact log was already saved recently
                 val database = com.example.callcentermonitor.data.AppDatabase.getDatabase(applicationContext)
@@ -94,7 +109,8 @@ class CallLogWorker : JobIntentService() {
                     duration = duration,
                     ringingDuration = finalRingingDuration,
                     timestamp = date,
-                    agentToken = activeToken
+                    agentToken = activeToken,
+                    disconnectedBy = disconnectedBy
                 )
                 database.callLogDao().insert(logEntity)
                 Log.d("CallLogWorker", "Saved log locally. Enqueueing SyncWorker.")

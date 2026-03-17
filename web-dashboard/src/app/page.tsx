@@ -63,6 +63,8 @@ function DashboardContent() {
   const [isViewingHistory, setIsViewingHistory] = useState(false);
   const [historyAgent, setHistoryAgent] = useState<{ id: string, username: string } | null>(null);
   const [historySessions, setHistorySessions] = useState<any[]>([]);
+  const [historyLoginSessions, setHistoryLoginSessions] = useState<any[]>([]);
+  const [historyTab, setHistoryTab] = useState<'activity' | 'login'>('activity');
   const [historyLoading, setHistoryLoading] = useState(false);
 
   // Rename Agent State
@@ -310,13 +312,17 @@ function DashboardContent() {
       });
       const data = await res.json();
       if (data.success) {
-        setHistorySessions(data.sessions);
+        setHistorySessions(data.sessions || []);
+        setHistoryLoginSessions(data.loginSessions || []);
+        setHistoryTab('activity');
       } else {
         setHistorySessions([]);
+        setHistoryLoginSessions([]);
       }
     } catch (err) {
       console.error('Failed to load history', err);
       setHistorySessions([]);
+      setHistoryLoginSessions([]);
     } finally {
       setHistoryLoading(false);
     }
@@ -653,6 +659,7 @@ function DashboardContent() {
                   <th scope="col" className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Phone Number</th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Type</th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Durations</th>
+                  <th scope="col" className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Hangup By</th>
                 </tr>
               </thead>
               <tbody className="bg-gray-900 divide-y divide-gray-800">
@@ -687,6 +694,19 @@ function DashboardContent() {
                           <span className="text-purple-400">🔔 Ringing: {formatDuration(log.ringingDuration ?? 0)}</span>
                           <span className="text-green-400">📞 Call: {formatDuration(log.duration)}</span>
                         </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        {log.disconnectedBy === 'AGENT' ? (
+                          <span className="flex items-center text-amber-400 bg-amber-900/20 px-2 py-1 rounded border border-amber-800/50 w-fit">
+                            <span className="mr-1.5">👤</span> Agent
+                          </span>
+                        ) : log.disconnectedBy === 'CLIENT' ? (
+                          <span className="flex items-center text-emerald-400 bg-emerald-900/20 px-2 py-1 rounded border border-emerald-800/50 w-fit">
+                            <span className="mr-1.5">📱</span> Client
+                          </span>
+                        ) : (
+                          <span className="text-gray-500 italic text-xs">Unknown</span>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -893,31 +913,90 @@ function DashboardContent() {
               </button>
             </div>
 
+            {/* Tabs */}
+            <div className="flex border-b border-gray-800 mb-6">
+              <button
+                onClick={() => setHistoryTab('activity')}
+                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                  historyTab === 'activity' 
+                    ? 'border-indigo-500 text-indigo-400' 
+                    : 'border-transparent text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                Activity (Availability)
+              </button>
+              <button
+                onClick={() => setHistoryTab('login')}
+                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                  historyTab === 'login' 
+                    ? 'border-indigo-500 text-indigo-400' 
+                    : 'border-transparent text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                Login History
+              </button>
+            </div>
+
             <div className="flex-1 overflow-y-auto pr-2">
               {historyLoading ? (
                 <div className="text-center py-12 text-gray-400">Loading history...</div>
-              ) : historySessions.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">No session history found for this agent.</div>
-              ) : (
-                <div className="space-y-3">
-                  {historySessions.map((session) => (
-                    <div key={session.id} className="bg-gray-800 border border-gray-700 rounded-lg p-4 flex flex-col sm:flex-row justify-between sm:items-center">
-                      <div className="flex flex-col mb-2 sm:mb-0">
-                        <span className="text-sm font-medium text-gray-300">
-                          {new Date(session.startTime).toLocaleDateString()}
-                        </span>
-                        <div className="text-sm text-gray-400 mt-1">
-                          <span className="text-green-400">{new Date(session.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                          <span className="mx-2">➔</span>
-                          <span className="text-amber-500">{new Date(session.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              ) : historyTab === 'activity' ? (
+                historySessions.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">No activity history found for this agent.</div>
+                ) : (
+                  <div className="space-y-3">
+                    {historySessions.map((session) => (
+                      <div key={session.id} className="bg-gray-800 border border-gray-700 rounded-lg p-4 flex flex-col sm:flex-row justify-between sm:items-center">
+                        <div className="flex flex-col mb-2 sm:mb-0">
+                          <span className="text-sm font-medium text-gray-300">
+                            {new Date(session.startTime).toLocaleDateString()}
+                          </span>
+                          <div className="text-sm text-gray-400 mt-1">
+                            <span className="text-green-400">{new Date(session.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span className="mx-2">➔</span>
+                            <span className="text-amber-500">{new Date(session.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
+                        </div>
+                        <div className="bg-gray-900 px-3 py-1.5 rounded text-indigo-300 font-mono text-sm border border-gray-800">
+                          Duration: {calculateDuration(session.startTime, session.endTime)}
                         </div>
                       </div>
-                      <div className="bg-gray-900 px-3 py-1.5 rounded text-indigo-300 font-mono text-sm border border-gray-800">
-                        Duration: {calculateDuration(session.startTime, session.endTime)}
+                    ))}
+                  </div>
+                )
+              ) : (
+                historyLoginSessions.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">No login history found for this agent.</div>
+                ) : (
+                  <div className="space-y-3">
+                    {historyLoginSessions.map((session) => (
+                      <div key={session.id} className="bg-gray-800 border border-gray-700 rounded-lg p-4 flex flex-col sm:flex-row justify-between sm:items-center">
+                        <div className="flex flex-col mb-2 sm:mb-0">
+                          <span className="text-sm font-medium text-gray-300">
+                            {new Date(session.startTime).toLocaleDateString()}
+                          </span>
+                          <div className="text-sm text-gray-400 mt-1">
+                            <span className="text-green-400">
+                              Logged in: {new Date(session.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            {session.endTime ? (
+                              <span className="text-amber-500 ml-4">
+                                Logged out: {new Date(session.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            ) : (
+                              <span className="text-blue-400 ml-4 italic">Currently logged in</span>
+                            )}
+                          </div>
+                        </div>
+                        {session.endTime && (
+                          <div className="bg-gray-900 px-3 py-1.5 rounded text-indigo-300 font-mono text-sm border border-gray-800">
+                            Session: {calculateDuration(session.startTime, session.endTime)}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )
               )}
             </div>
             

@@ -35,7 +35,7 @@ export async function POST(request: Request) {
 
         const validLogsData = [];
         for (const logItem of logsToProcess) {
-            const { phoneNumber, type, duration, timestamp, ringingDuration } = logItem;
+            const { phoneNumber, type, duration, timestamp, ringingDuration, disconnectedBy } = logItem;
             if (!phoneNumber || !type || duration === undefined || !timestamp) {
                 return NextResponse.json(
                     { error: 'Missing required fields in one or more logs' },
@@ -49,6 +49,7 @@ export async function POST(request: Request) {
                 ringingDuration: typeof ringingDuration === 'string' ? parseInt(ringingDuration, 10) : (ringingDuration ?? 0),
                 timestamp: new Date(timestamp),
                 agentId: userId,
+                disconnectedBy: disconnectedBy || "UNKNOWN",
             });
         }
 
@@ -157,33 +158,33 @@ export async function GET(request: Request) {
             whereClause.timestamp = { gte: defaultStart };
         }
 
-        const [logs, totalLogs, allFilteredLogs] = await Promise.all([
-            prisma.callLog.findMany({
-                where: whereClause,
-                orderBy: { timestamp: 'desc' },
-                skip,
-                take: limit,
-                include: {
-                    agent: {
-                        select: { username: true }
-                    }
+        const logs = await prisma.callLog.findMany({
+            where: whereClause,
+            orderBy: { timestamp: 'desc' },
+            skip,
+            take: limit,
+            include: {
+                agent: {
+                    select: { username: true }
                 }
-            }),
-            prisma.callLog.count({ where: whereClause }),
-            // Fetch a lightweight unpaginated list of ALL filtered logs for strictly accurate Graph and Stats rendering
-            prisma.callLog.findMany({
-                where: whereClause,
-                select: {
-                    type: true,
-                    duration: true,
-                    ringingDuration: true,
-                    timestamp: true,
-                    phoneNumber: true,
-                    agentId: true
-                },
-                orderBy: { timestamp: 'asc' }
-            })
-        ]);
+            }
+        });
+
+        const totalLogs = await prisma.callLog.count({ where: whereClause });
+
+        const allFilteredLogs = await prisma.callLog.findMany({
+            where: whereClause,
+            select: {
+                type: true,
+                duration: true,
+                ringingDuration: true,
+                timestamp: true,
+                phoneNumber: true,
+                agentId: true,
+                disconnectedBy: true
+            },
+            orderBy: { timestamp: 'asc' }
+        });
 
         const totalPages = Math.max(1, Math.ceil(totalLogs / limit));
 

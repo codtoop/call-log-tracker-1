@@ -33,14 +33,52 @@ export async function POST(request: Request) {
             data: { lastSeen: new Date() }
         });
 
-        // Create a new login session
-        await prisma.agentSession.create({
-            data: {
+        // Check for existing open login session to avoid fragmentation
+        console.log(`Checking for open LoginSessions for user: ${user.username}`);
+        const existingSession = await prisma.loginSession.findFirst({
+            where: {
                 agentId: user.id,
-                startTime: new Date(),
-                endTime: new Date()
-            }
+                endTime: null
+            },
+            orderBy: { startTime: 'desc' }
         });
+
+        if (existingSession) {
+            console.log(`Resuming existing LoginSession: ${existingSession.id}`);
+        } else {
+            console.log(`Creating fresh LoginSession for user: ${user.username} (${user.id})`);
+            const loginSession = await prisma.loginSession.create({
+                data: {
+                    agentId: user.id,
+                    startTime: new Date(),
+                }
+            });
+            console.log(`Created LoginSession with ID: ${loginSession.id}`);
+        }
+
+        // Also create/update the activity session (AgentSession)
+        console.log('Checking for recent activity session...');
+        const now = new Date();
+        const twoMinutesAgo = new Date(now.getTime() - 120000);
+        const lastActivitySession = await prisma.agentSession.findFirst({
+            where: { agentId: user.id },
+            orderBy: { endTime: 'desc' }
+        });
+
+        if (lastActivitySession && lastActivitySession.endTime >= twoMinutesAgo) {
+            await prisma.agentSession.update({
+                where: { id: lastActivitySession.id },
+                data: { endTime: now }
+            });
+        } else {
+            await prisma.agentSession.create({
+                data: {
+                    agentId: user.id,
+                    startTime: now,
+                    endTime: now
+                }
+            });
+        }
 
         return NextResponse.json({
             success: true,

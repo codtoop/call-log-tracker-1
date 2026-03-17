@@ -51,6 +51,7 @@ object ApiService {
                     jsonObj.put("duration", log.duration)
                     jsonObj.put("ringingDuration", log.ringingDuration)
                     jsonObj.put("timestamp", log.timestamp)
+                    jsonObj.put("disconnectedBy", log.disconnectedBy)
                     jsonArray.put(jsonObj)
                 }
 
@@ -92,7 +93,7 @@ object ApiService {
             }
 
             val request = okhttp3.Request.Builder()
-                .url("$serverUrl/api/agents/heartbeat")
+                .url("$serverUrl/api/agent/ping")
                 .header("Authorization", "Bearer $activeToken")
                 .post("{}".toRequestBody(JSON))
                 .build()

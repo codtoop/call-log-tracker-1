@@ -10,7 +10,8 @@ export function signToken(userId: string, role: string) {
 export function verifyToken(token: string) {
     try {
         return jwt.verify(token, JWT_SECRET) as { userId: string, role: string };
-    } catch (error) {
+    } catch (error: any) {
+        console.error(`[Auth] Token verification failed:`, error.message);
         return null;
     }
 }
