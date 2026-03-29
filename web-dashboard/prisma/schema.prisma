@@ -28,6 +28,8 @@ model AgentSession {
   agent     User     @relation(fields: [agentId], references: [id], onDelete: Cascade)
   startTime DateTime @default(now())
   endTime   DateTime @default(now())
+
+  @@index([agentId, startTime, endTime])
 }
 
 model LoginSession {
@@ -36,6 +38,8 @@ model LoginSession {
   agent     User     @relation(fields: [agentId], references: [id], onDelete: Cascade)
   startTime DateTime @default(now())
   endTime   DateTime? // Nullable until logout
+
+  @@index([agentId, startTime])
 }
 
 model CallLog {
@@ -48,7 +52,8 @@ model CallLog {
   agentId     String
   agent       User     @relation(fields: [agentId], references: [id])
   disconnectedBy String @default("UNKNOWN") // "AGENT", "CLIENT", "UNKNOWN"
-  createdAt   DateTime @default(now())
+  metadata       String? // JSON or diagnostic info
+  createdAt      DateTime @default(now())
 
   @@unique([agentId, phoneNumber, type, timestamp])
 }

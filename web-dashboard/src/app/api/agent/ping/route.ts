@@ -22,26 +22,21 @@ export async function POST(request: Request) {
             data: { lastSeen: new Date() }
         });
 
-        // 2. Manage the agent's session history
+        // 2. Manage the agent's activity sessions (AgentSession)
         const now = new Date();
-        const twoMinutesAgo = new Date(now.getTime() - 120000); // 2 minutes in milliseconds
+        const twoMinutesAgo = new Date(now.getTime() - 120000); // 2 minutes
 
-        // Find the most recent session for this agent
-        const lastSession = await prisma.agentSession.findFirst({
+        const lastActivitySession = await prisma.agentSession.findFirst({
             where: { agentId: decoded.userId },
             orderBy: { endTime: 'desc' }
         });
 
-        if (lastSession && lastSession.endTime >= twoMinutesAgo) {
-            // The agent pinged within the last 2 minutes, so this is still the same session.
-            // Extend the active session's endTime to now.
+        if (lastActivitySession && lastActivitySession.endTime >= twoMinutesAgo) {
             await prisma.agentSession.update({
-                where: { id: lastSession.id },
+                where: { id: lastActivitySession.id },
                 data: { endTime: now }
             });
         } else {
-            // The agent's last ping was more than 2 minutes ago OR they have no sessions.
-            // This is a new session!
             await prisma.agentSession.create({
                 data: {
                     agentId: decoded.userId,

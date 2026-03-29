@@ -1,63 +1,69 @@
 package com.example.callcentermonitor
 
 import android.content.Context
-import android.content.Intent
-import android.os.Handler
-import android.os.Looper
 import android.provider.CallLog
 import android.util.Log
-import androidx.core.app.JobIntentService
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.Constraints
+import androidx.work.NetworkType
+import androidx.work.ExistingWorkPolicy
+import kotlinx.coroutines.delay
+import java.lang.StringBuilder
 
-class CallLogWorker : JobIntentService() {
+class CallLogWorker(appContext: Context, workerParams: WorkerParameters) :
+    CoroutineWorker(appContext, workerParams) {
 
-    companion object {
-        private const val JOB_ID = 1000
-
-        fun enqueueWork(context: Context, work: Intent) {
-            enqueueWork(context, CallLogWorker::class.java, JOB_ID, work)
-        }
-    }
-
-    override fun onHandleWork(intent: Intent) {
-        Log.d("CallLogWorker", "Waiting 5 seconds for CallLog to sync...")
-        // Read ringingDuration from SharedPreferences (written by CallReceiver reliably)
-        val prefs = getSharedPreferences("CallMonitorPrefs", android.content.Context.MODE_PRIVATE)
-        val ringingDuration = prefs.getInt("lastRingingDuration", 0)
-        prefs.edit().remove("lastRingingDuration").apply() // clear after reading
-        Log.d("CallLogWorker", "Read ringingDuration=$ringingDuration from SharedPrefs")
+    override suspend fun doWork(): Result {
+        Log.d("CallLogWorker", "Work started. Waiting 15 seconds for CallLog to sync...")
         
-        // Sleep slightly to let the OS write to the DB
-        try {
-            Thread.sleep(5000)
-        } catch (e: InterruptedException) {
-            e.printStackTrace()
-        }
+        val prefs = applicationContext.getSharedPreferences("CallMonitorPrefs", Context.MODE_PRIVATE)
+        val ringingDuration = prefs.getInt("lastRingingDuration", 0)
+        prefs.edit().remove("lastRingingDuration").apply()
+        
+        delay(15000)
 
-        readLastCallLog(ringingDuration)
+        return try {
+            readLastCallLog(ringingDuration)
+            Result.success()
+        } catch (e: Exception) {
+            Log.e("CallLogWorker", "Error in CallLogWorker: ${e.message}", e)
+            Result.failure()
+        }
     }
 
     private fun readLastCallLog(ringingDuration: Int) {
-        try {
-            val cursor = contentResolver.query(
-                CallLog.Calls.CONTENT_URI,
-                null, 
-                null, 
-                null, 
-                CallLog.Calls.DATE + " DESC"
-            )
+        val targetNumber = inputData.getString("phoneNumber")
+        val selection = if (targetNumber != null) "${CallLog.Calls.NUMBER} LIKE ?" else null
+        val selectionArgs = if (targetNumber != null) arrayOf("%${targetNumber.takeLast(8)}") else null
 
-            if (cursor != null && cursor.moveToFirst()) {
-                val numberColumn = cursor.getColumnIndex(CallLog.Calls.NUMBER)
-                val typeColumn = cursor.getColumnIndex(CallLog.Calls.TYPE)
-                val dateColumn = cursor.getColumnIndex(CallLog.Calls.DATE)
-                val durationColumn = cursor.getColumnIndex(CallLog.Calls.DURATION)
-                val disconnectCauseColumn = cursor.getColumnIndex("disconnect_cause")
+        val cursor = applicationContext.contentResolver.query(
+            CallLog.Calls.CONTENT_URI,
+            null, 
+            selection, 
+            selectionArgs, 
+            CallLog.Calls.DATE + " DESC"
+        )
 
-                val number = cursor.getString(numberColumn)
-                val typeCode = cursor.getString(typeColumn).toInt()
-                val date = cursor.getLong(dateColumn)
-                val duration = cursor.getString(durationColumn).toInt()
-                val disconnectCauseCode = if (disconnectCauseColumn >= 0) cursor.getInt(disconnectCauseColumn) else -1
+        cursor?.use {
+            if (it.moveToFirst()) {
+                val numberColumn = it.getColumnIndex(CallLog.Calls.NUMBER)
+                val typeColumn = it.getColumnIndex(CallLog.Calls.TYPE)
+                val dateColumn = it.getColumnIndex(CallLog.Calls.DATE)
+                val durationColumn = it.getColumnIndex(CallLog.Calls.DURATION)
+                val disconnectCauseColumn = it.getColumnIndex("disconnect_cause")
+                val disconnectReasonColumn = it.getColumnIndex("disconnect_reason")
+                val shortReasonColumn = it.getColumnIndex("reason")
+
+                val number = it.getString(numberColumn)
+                val typeCode = it.getString(typeColumn).toInt()
+                val date = it.getLong(dateColumn)
+                val duration = it.getString(durationColumn).toInt()
+                val disconnectCauseCode = if (disconnectCauseColumn >= 0) it.getInt(disconnectCauseColumn) else -1
+                val disconnectReasonCode = if (disconnectReasonColumn >= 0) it.getInt(disconnectReasonColumn) else -1
+                val reasonCode = if (shortReasonColumn >= 0) it.getInt(shortReasonColumn) else -1
 
                 var type = "UNKNOWN"
                 when (typeCode) {
@@ -67,41 +73,64 @@ class CallLogWorker : JobIntentService() {
                     CallLog.Calls.REJECTED_TYPE -> type = "REJECTED"
                 }
 
-                Log.d("CallLogWorker", "Found Last Log: $number | $type | $duration sek | Cause: $disconnectCauseCode")
-
                 var disconnectedBy = "UNKNOWN"
-                if (disconnectCauseCode != -1) {
-                    when (disconnectCauseCode) {
-                        3 -> disconnectedBy = "AGENT" // CallLog.Calls.DISCONNECT_CAUSE_LOCAL (API 30+)
-                        2 -> disconnectedBy = "CLIENT" // CallLog.Calls.DISCONNECT_CAUSE_NORMAL (API 30+)
-                        else -> {
-                            Log.d("CallLogWorker", "Unhandled disconnectCauseCode: $disconnectCauseCode. Defaulting to UNKNOWN.")
+                var metadataBuilder = StringBuilder()
+                metadataBuilder.append("--- VERSION: v8_IntentExtras ---\n")
+
+                if (disconnectCauseCode != -1 || disconnectReasonCode != -1 || reasonCode != -1) {
+                    val code = when {
+                        disconnectCauseCode != -1 -> disconnectCauseCode
+                        disconnectReasonCode != -1 -> disconnectReasonCode
+                        else -> reasonCode
+                    }
+                    
+                    when (code) {
+                        2 -> disconnectedBy = "AGENT" // LOCAL (Agent hung up)
+                        3 -> disconnectedBy = "CLIENT" // NORMAL (Remote hung up)
+                        4 -> disconnectedBy = "CLIENT" // BUSY
+                        5 -> disconnectedBy = if (type == "INCOMING") "AGENT" else "CLIENT" // REJECTED
+                    }
+                }
+                
+                // Robust busy/declined logic
+                if (disconnectedBy == "UNKNOWN" || disconnectedBy == "AGENT") {
+                    if (type == "OUTGOING" && duration == 0) {
+                        // On many devices, reason 0, 1, 2, or 4 for an outgoing 0-duration call means CLIENT REJECTED/BUSY
+                        // 0 = Declined/Rejected
+                        // 1 = Busy
+                        // 2 = Client unreachable
+                        // 4 = Client Busy
+                        if (reasonCode in listOf(0, 1, 2, 4) || disconnectCauseCode in listOf(0, 1, 2, 4)) {
+                            disconnectedBy = "CLIENT"
+                        } else {
+                            disconnectedBy = "AGENT"
                         }
                     }
-                } else {
-                    Log.d("CallLogWorker", "disconnectCauseCode is -1 (Not available on this device/call)")
                 }
 
-                // Deduplicate at insert time — check if this exact log was already saved recently
+                metadataBuilder.append("\n--- COLUMN DIAGNOSTIC ---\n")
+                for (i in 0 until it.columnCount) {
+                    val name = it.getColumnName(i)
+                    val value = try { it.getString(i) } catch (e: Exception) { "N/A" }
+                    metadataBuilder.append("$name: $value\n")
+                }
+
                 val database = com.example.callcentermonitor.data.AppDatabase.getDatabase(applicationContext)
-                val existing = database.callLogDao().findRecentLog(number, type, date)
-                if (existing != null) {
-                    Log.d("CallLogWorker", "Duplicate detected locally — skipping insert. Existing id=${existing.id}")
-                    cursor.close()
-                    return
-                }
-
                 var finalRingingDuration = ringingDuration
                 if (type == "OUTGOING") {
-                    // For outgoing, ringingDuration currently holds the total offhook time
-                    // Subtract actual talk duration to find out how long we waited for them to pick up
                     finalRingingDuration = ringingDuration - duration
                     if (finalRingingDuration < 0) finalRingingDuration = 0
-                    Log.d("CallLogWorker", "Outgoing Math: Total Offhook=$ringingDuration, Talk=$duration -> Ringing=$finalRingingDuration s")
                 }
 
-                val prefsNow = applicationContext.getSharedPreferences("CallMonitorPrefs", android.content.Context.MODE_PRIVATE)
+                val prefsNow = applicationContext.getSharedPreferences("CallMonitorPrefs", Context.MODE_PRIVATE)
                 val activeToken = prefsNow.getString("token", "") ?: ""
+                val lastIntentExtras = prefsNow.getString("lastIntentExtras", "") ?: ""
+
+                metadataBuilder.append("\n--- INTENT EXTRAS ---\n")
+                metadataBuilder.append(lastIntentExtras)
+                
+                val finalMetadata = metadataBuilder.toString()
+                prefsNow.edit().remove("lastIntentExtras").apply()
 
                 val logEntity = com.example.callcentermonitor.data.CallLogEntity(
                     phoneNumber = number,
@@ -110,30 +139,24 @@ class CallLogWorker : JobIntentService() {
                     ringingDuration = finalRingingDuration,
                     timestamp = date,
                     agentToken = activeToken,
-                    disconnectedBy = disconnectedBy
+                    disconnectedBy = disconnectedBy,
+                    metadata = finalMetadata
                 )
                 database.callLogDao().insert(logEntity)
-                Log.d("CallLogWorker", "Saved log locally. Enqueueing SyncWorker.")
 
-                val constraints = androidx.work.Constraints.Builder()
-                    .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                val constraints = Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
                     .build()
 
-                val syncWorkRequest = androidx.work.OneTimeWorkRequestBuilder<SyncWorker>()
+                val syncWorkRequest = OneTimeWorkRequestBuilder<SyncWorker>()
                     .setConstraints(constraints)
                     .build()
-                androidx.work.WorkManager.getInstance(applicationContext).enqueueUniqueWork(
+                WorkManager.getInstance(applicationContext).enqueueUniqueWork(
                     "SyncCallLogsWork",
-                    androidx.work.ExistingWorkPolicy.REPLACE,
+                    ExistingWorkPolicy.REPLACE,
                     syncWorkRequest
                 )
-
-                cursor.close()
             }
-        } catch (e: SecurityException) {
-            Log.e("CallLogWorker", "Permission not granted to read call logs: ${e.message}")
-        } catch (e: Exception) {
-            Log.e("CallLogWorker", "Error reading log: ${e.message}")
         }
     }
 }

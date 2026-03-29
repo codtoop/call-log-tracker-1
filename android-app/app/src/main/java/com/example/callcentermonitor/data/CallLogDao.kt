@@ -8,7 +8,7 @@ import androidx.room.Delete
 
 @Dao
 interface CallLogDao {
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insert(callLog: CallLogEntity)
 
     // Finds any locally stored log with same phone+type within a 30-second window (timestamps in ms)

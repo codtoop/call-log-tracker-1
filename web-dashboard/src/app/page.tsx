@@ -66,6 +66,8 @@ function DashboardContent() {
   const [historyLoginSessions, setHistoryLoginSessions] = useState<any[]>([]);
   const [historyTab, setHistoryTab] = useState<'activity' | 'login'>('activity');
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [selectedLogForView, setSelectedLogForView] = useState<any | null>(null);
+  const [isViewingLog, setIsViewingLog] = useState(false);
 
   // Rename Agent State
   const filteredLogs = logs; // Keeping the name to minimize diff, but it's server-filtered now.
@@ -660,6 +662,7 @@ function DashboardContent() {
                   <th scope="col" className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Type</th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Durations</th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Hangup By</th>
+                  <th scope="col" className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Diagnostics</th>
                 </tr>
               </thead>
               <tbody className="bg-gray-900 divide-y divide-gray-800">
@@ -706,6 +709,21 @@ function DashboardContent() {
                           </span>
                         ) : (
                           <span className="text-gray-500 italic text-xs">Unknown</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        {log.metadata ? (
+                          <button
+                            onClick={() => {
+                              setSelectedLogForView(log);
+                              setIsViewingLog(true);
+                            }}
+                            className="text-indigo-400 hover:text-indigo-300 bg-indigo-900/20 px-2 py-1 rounded border border-indigo-800/50 transition-colors"
+                          >
+                            📋 View Logs
+                          </button>
+                        ) : (
+                          <span className="text-gray-600">-</span>
                         )}
                       </td>
                     </tr>
@@ -1007,6 +1025,40 @@ function DashboardContent() {
                   setHistoryAgent(null);
                 }}
                 className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-md text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Log Detail Modal */}
+      {isViewingLog && selectedLogForView && (
+        <div className="fixed inset-0 bg-black/50 overflow-y-auto h-full w-full flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+          <div className="bg-gray-900 border border-gray-800 rounded-xl shadow-2xl p-8 max-w-2xl w-full relative max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h2 className="text-xl font-bold text-white">Call Diagnostic Logs</h2>
+                <p className="text-sm text-gray-400">{selectedLogForView.phoneNumber} - {new Date(selectedLogForView.timestamp).toLocaleString()}</p>
+              </div>
+              <button
+                onClick={() => setIsViewingLog(false)}
+                className="text-gray-400 hover:text-white transition-colors p-2"
+              >
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto bg-black rounded-lg p-4 border border-gray-700 font-mono text-sm text-green-400 whitespace-pre-wrap">
+              {selectedLogForView.metadata || "No detailed logs available for this call."}
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setIsViewingLog(false)}
+                className="px-6 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-700 transition-colors border border-gray-700 font-medium"
               >
                 Close
               </button>

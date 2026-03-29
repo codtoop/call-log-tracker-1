@@ -36,35 +36,29 @@ export async function GET(
             }
         };
 
-        let activitySessions: any[] = [];
-        try {
-            activitySessions = await fetchWithRetry(() => prisma.agentSession.findMany({
-                where: { agentId },
-                orderBy: { startTime: 'desc' },
-                take: 100
-            })) || [];
-            console.log(`[SessionsAPI] Found ${activitySessions.length} activity sessions`);
-        } catch (e: any) {
-            console.error(`[SessionsAPI] Error fetching activitySessions:`, e.message);
-        }
+        const fetchActivity = () => fetchWithRetry(() => prisma.agentSession.findMany({
+            where: { agentId },
+            orderBy: { startTime: 'desc' },
+            take: 100
+        }));
 
-        let loginSessions: any[] = [];
-        try {
-            loginSessions = await fetchWithRetry(() => prisma.loginSession.findMany({
-                where: { agentId },
-                orderBy: { startTime: 'desc' },
-                take: 100
-            })) || [];
-            console.log(`[SessionsAPI] Found ${loginSessions.length} login sessions`);
-        } catch (e: any) {
-            console.error(`[SessionsAPI] Error fetching loginSessions:`, e.message);
-            throw e; 
-        }
+        const fetchLogin = () => fetchWithRetry(() => prisma.loginSession.findMany({
+            where: { agentId },
+            orderBy: { startTime: 'desc' },
+            take: 100
+        }));
+
+        const [activitySessions, loginSessions] = await Promise.all([
+            fetchActivity(),
+            fetchLogin()
+        ]);
+
+        console.log(`[SessionsAPI] Found ${activitySessions?.length || 0} activity sessions and ${loginSessions?.length || 0} login sessions`);
 
         return NextResponse.json({ 
             success: true, 
-            sessions: activitySessions,
-            loginSessions: loginSessions
+            sessions: activitySessions || [],
+            loginSessions: loginSessions || []
         });
     } catch (error: any) {
         console.error('[SessionsAPI] Global error:', error.message || error);

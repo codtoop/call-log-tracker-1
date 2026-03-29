@@ -17,10 +17,33 @@ export async function POST(request: Request) {
         }
 
         // Update the lastSeen field for the user
+        const now = new Date();
         await prisma.user.update({
             where: { id: decoded.userId },
-            data: { lastSeen: new Date() },
+            data: { lastSeen: now },
         });
+
+        // Manage AgentSession (Activity)
+        const twoMinutesAgo = new Date(now.getTime() - 120000);
+        const lastActivitySession = await prisma.agentSession.findFirst({
+            where: { agentId: decoded.userId },
+            orderBy: { endTime: 'desc' }
+        });
+
+        if (lastActivitySession && lastActivitySession.endTime >= twoMinutesAgo) {
+            await prisma.agentSession.update({
+                where: { id: lastActivitySession.id },
+                data: { endTime: now }
+            });
+        } else {
+            await prisma.agentSession.create({
+                data: {
+                    agentId: decoded.userId,
+                    startTime: now,
+                    endTime: now
+                }
+            });
+        }
 
         return NextResponse.json({ success: true, message: 'Heartbeat received' });
     } catch (error) {

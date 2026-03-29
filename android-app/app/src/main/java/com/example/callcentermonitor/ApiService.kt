@@ -52,6 +52,7 @@ object ApiService {
                     jsonObj.put("ringingDuration", log.ringingDuration)
                     jsonObj.put("timestamp", log.timestamp)
                     jsonObj.put("disconnectedBy", log.disconnectedBy)
+                    jsonObj.put("metadata", log.metadata ?: JSONObject.NULL)
                     jsonArray.put(jsonObj)
                 }
 

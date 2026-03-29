@@ -18,8 +18,16 @@ class CallReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == TelephonyManager.ACTION_PHONE_STATE_CHANGED) {
-            val stateStr = intent.extras?.getString(TelephonyManager.EXTRA_STATE)
-            val number = intent.extras?.getString(TelephonyManager.EXTRA_INCOMING_NUMBER)
+            val extras = intent.extras
+            if (extras != null) {
+                Log.d("CallReceiver", "--- Intent Extras ---")
+                for (key in extras.keySet()) {
+                    Log.d("CallReceiver", "$key: ${extras.get(key)}")
+                }
+            }
+
+            val stateStr = extras?.getString(TelephonyManager.EXTRA_STATE)
+            val number = extras?.getString(TelephonyManager.EXTRA_INCOMING_NUMBER)
 
             var state = TelephonyManager.CALL_STATE_IDLE
             when (stateStr) {
@@ -28,11 +36,11 @@ class CallReceiver : BroadcastReceiver() {
                 TelephonyManager.EXTRA_STATE_RINGING  -> state = TelephonyManager.CALL_STATE_RINGING
             }
 
-            onCallStateChanged(context, state, number)
+            onCallStateChanged(context, state, number, intent)
         }
     }
 
-    private fun onCallStateChanged(context: Context, state: Int, number: String?) {
+    private fun onCallStateChanged(context: Context, state: Int, number: String?, intent: Intent) {
         if (lastState == state) return
 
         when (state) {
@@ -79,7 +87,7 @@ class CallReceiver : BroadcastReceiver() {
                 }
 
                 Log.d("CallReceiver", "Call ended. Calculated initial Duration=$ringingDuration s")
-                processFinishedCall(context, ringingDuration)
+                processFinishedCall(context, ringingDuration, intent.extras)
 
                 // Reset timers
                 ringStartTime = 0L
@@ -89,13 +97,29 @@ class CallReceiver : BroadcastReceiver() {
         lastState = state
     }
 
-    private fun processFinishedCall(context: Context, ringingDuration: Int) {
-        Log.d("CallReceiver", "Saving ringingDuration=$ringingDuration to SharedPrefs and triggering worker")
-        // Save to SharedPreferences — JobIntentService doesn't reliably propagate Intent extras
-        val prefs = context.getSharedPreferences("CallMonitorPrefs", android.content.Context.MODE_PRIVATE)
-        prefs.edit().putInt("lastRingingDuration", ringingDuration).apply()
+    private fun processFinishedCall(context: Context, ringingDuration: Int, extras: android.os.Bundle?) {
+        Log.d("CallReceiver", "Saving ringingDuration=$ringingDuration and extras to SharedPrefs")
+        val prefs = context.getSharedPreferences("CallMonitorPrefs", Context.MODE_PRIVATE)
+        
+        val extrasBuilder = StringBuilder()
+        extras?.let {
+            for (key in it.keySet()) {
+                extrasBuilder.append("$key: ${it.get(key)}\n")
+            }
+        }
 
-        val workIntent = Intent(context, CallLogWorker::class.java)
-        CallLogWorker.enqueueWork(context, workIntent)
+        prefs.edit()
+            .putInt("lastRingingDuration", ringingDuration)
+            .putString("lastIntentExtras", extrasBuilder.toString())
+            .apply()
+
+        val workRequest = androidx.work.OneTimeWorkRequestBuilder<CallLogWorker>()
+            .build()
+        
+        androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+            "CallLogCaptureWork",
+            androidx.work.ExistingWorkPolicy.REPLACE,
+            workRequest
+        )
     }
 }

@@ -16,5 +16,6 @@ data class CallLogEntity(
     val timestamp: Long,
     val agentToken: String = "",
     val disconnectedBy: String = "UNKNOWN", // "AGENT", "CLIENT", "UNKNOWN"
+    val metadata: String? = null,
     var isSynced: Boolean = false
 )

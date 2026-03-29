@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import fs from 'fs';
+import path from 'path';
 import { verifyToken } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -14,15 +16,21 @@ function getAuthPayloadFromRequest(request: Request) {
 
 export async function POST(request: Request) {
     try {
+        const rawBody = await request.text();
+        const headers = Object.fromEntries(request.headers.entries());
+        console.log(`[LOG_DEBUG] POST /api/logs | Headers: ${JSON.stringify(headers)} | Body: ${rawBody}`);
+
+        console.log("---- RECEIVED /api/logs POST ----");
+        const data = JSON.parse(rawBody);
+        console.log("=========================");
+        console.log("Data: ", data);
+        console.log("=========================");
         const payload = getAuthPayloadFromRequest(request);
         if (!payload) {
+            console.error("[LogsAPI] Unauthorized request (invalid or missing token)");
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
         const userId = payload.userId;
-
-        const data = await request.json();
-        console.log("---- RECEIVED /api/logs POST ----");
-        console.log(JSON.stringify(data, null, 2));
 
         const logsToProcess = Array.isArray(data) ? data : [data];
 
@@ -35,7 +43,7 @@ export async function POST(request: Request) {
 
         const validLogsData = [];
         for (const logItem of logsToProcess) {
-            const { phoneNumber, type, duration, timestamp, ringingDuration, disconnectedBy } = logItem;
+            const { phoneNumber, type, duration, timestamp, ringingDuration, disconnectedBy, metadata } = logItem;
             if (!phoneNumber || !type || duration === undefined || !timestamp) {
                 return NextResponse.json(
                     { error: 'Missing required fields in one or more logs' },
@@ -50,6 +58,7 @@ export async function POST(request: Request) {
                 timestamp: new Date(timestamp),
                 agentId: userId,
                 disconnectedBy: disconnectedBy || "UNKNOWN",
+                metadata: metadata || null,
             });
         }
 

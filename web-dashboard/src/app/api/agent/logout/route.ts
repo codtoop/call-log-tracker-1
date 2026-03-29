@@ -22,6 +22,22 @@ export async function POST(request: Request) {
             data: { lastSeen: new Date(0) }
         });
 
+        // Find the open login session and close it
+        const lastLoginSession = await prisma.loginSession.findFirst({
+            where: { 
+                agentId: decoded.userId,
+                endTime: null 
+            },
+            orderBy: { startTime: 'desc' }
+        });
+
+        if (lastLoginSession) {
+            await prisma.loginSession.update({
+                where: { id: lastLoginSession.id },
+                data: { endTime: new Date() }
+            });
+        }
+
         return NextResponse.json({ success: true, message: 'Logged out successfully' });
     } catch (error) {
         console.error('Agent logout error:', error);

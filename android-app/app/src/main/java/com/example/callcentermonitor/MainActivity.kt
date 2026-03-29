@@ -153,6 +153,11 @@ class MainActivity : ComponentActivity() {
 fun SetupScreen(context: MainActivity) {
     val prefs = context.getSharedPreferences("CallMonitorPrefs", Context.MODE_PRIVATE)
     
+    val currentUrl = prefs.getString("serverUrl", "")
+    if (currentUrl.isNullOrEmpty() || currentUrl.contains("localhost") || currentUrl.contains("192.168")) {
+        prefs.edit().putString("serverUrl", "https://call-log-tracker.vercel.app").apply()
+    }
+    
     var serverUrl by remember { mutableStateOf(prefs.getString("serverUrl", "https://call-log-tracker.vercel.app") ?: "https://call-log-tracker.vercel.app") }
     var username by remember { mutableStateOf(prefs.getString("username", "") ?: "") }
     var password by remember { mutableStateOf("") }
@@ -243,7 +248,15 @@ fun SetupScreen(context: MainActivity) {
             modifier = Modifier.padding(bottom = 24.dp)
         )
 
-        /* Server URL field removed as per request to hide it from agents */
+        OutlinedTextField(
+            value = serverUrl,
+            onValueChange = { serverUrl = it },
+            label = { Text("Server URL") },
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp)
+        )
 
         OutlinedTextField(
             value = username,
