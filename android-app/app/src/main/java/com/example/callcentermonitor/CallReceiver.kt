@@ -17,6 +17,22 @@ class CallReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == "com.example.callcentermonitor.ACTION_ANSWER") {
+            Log.d("CallReceiver", "ACTION_ANSWER received from Notification")
+            CallManager.answer()
+            // Launch CallActivity after answering
+            val callIntent = Intent(context, CallActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            }
+            context.startActivity(callIntent)
+            return
+        }
+        if (intent.action == "com.example.callcentermonitor.ACTION_DECLINE") {
+            Log.d("CallReceiver", "ACTION_DECLINE received from Notification")
+            CallManager.reject()
+            return
+        }
+
         if (intent.action == TelephonyManager.ACTION_PHONE_STATE_CHANGED) {
             val extras = intent.extras
             if (extras != null) {

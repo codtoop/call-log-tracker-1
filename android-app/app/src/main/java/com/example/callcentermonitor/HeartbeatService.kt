@@ -59,7 +59,7 @@ class HeartbeatService : Service() {
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(2002, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            startForeground(2002, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
             startForeground(2002, notification)
         }

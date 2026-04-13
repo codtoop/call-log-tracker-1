@@ -85,26 +85,28 @@ class CallLogWorker(appContext: Context, workerParams: WorkerParameters) :
                     }
                     
                     when (code) {
-                        2 -> disconnectedBy = "AGENT" // LOCAL (Agent hung up)
+                        2 -> disconnectedBy = "AGENT" // LOCAL / CANCELED
                         3 -> disconnectedBy = "CLIENT" // NORMAL (Remote hung up)
                         4 -> disconnectedBy = "CLIENT" // BUSY
                         5 -> disconnectedBy = if (type == "INCOMING") "AGENT" else "CLIENT" // REJECTED
+                        6 -> disconnectedBy = "CLIENT" // MISSED
                     }
                 }
                 
-                // Robust busy/declined logic
+                // Final heuristic pass for cases where codes are zero or ambiguous
                 if (disconnectedBy == "UNKNOWN" || disconnectedBy == "AGENT") {
                     if (type == "OUTGOING" && duration == 0) {
-                        // On many devices, reason 0, 1, 2, or 4 for an outgoing 0-duration call means CLIENT REJECTED/BUSY
-                        // 0 = Declined/Rejected
-                        // 1 = Busy
-                        // 2 = Client unreachable
-                        // 4 = Client Busy
-                        if (reasonCode in listOf(0, 1, 2, 4) || disconnectCauseCode in listOf(0, 1, 2, 4)) {
+                        // 0-duration outgoing calls with these codes are almost always Client-side rejections
+                        // 0 = REJECTED/BUSY on many OEMs, 1 = BUSY, 4 = BUSY
+                        if (reasonCode in listOf(0, 1, 4, 5) || disconnectCauseCode in listOf(0, 1, 4, 5)) {
                             disconnectedBy = "CLIENT"
-                        } else {
-                            disconnectedBy = "AGENT"
+                        } else if (reasonCode == 2 || disconnectCauseCode == 2) {
+                            disconnectedBy = "AGENT" // Explicitly CANCELED
                         }
+                    } else if (type == "MISSED") {
+                        disconnectedBy = "CLIENT"
+                    } else if (type == "REJECTED") {
+                        disconnectedBy = "AGENT"
                     }
                 }
 
@@ -125,12 +127,18 @@ class CallLogWorker(appContext: Context, workerParams: WorkerParameters) :
                 val prefsNow = applicationContext.getSharedPreferences("CallMonitorPrefs", Context.MODE_PRIVATE)
                 val activeToken = prefsNow.getString("token", "") ?: ""
                 val lastIntentExtras = prefsNow.getString("lastIntentExtras", "") ?: ""
+                val lastPreciseDisconnectBy = prefsNow.getString("lastPreciseDisconnectBy", "") ?: ""
+                
+                if (lastPreciseDisconnectBy.isNotEmpty() && lastPreciseDisconnectBy != "UNKNOWN") {
+                    disconnectedBy = lastPreciseDisconnectBy
+                    metadataBuilder.append("\n--- INCALLSERVICE PRECISE CAUSE ---\n$lastPreciseDisconnectBy\n")
+                }
 
                 metadataBuilder.append("\n--- INTENT EXTRAS ---\n")
                 metadataBuilder.append(lastIntentExtras)
                 
                 val finalMetadata = metadataBuilder.toString()
-                prefsNow.edit().remove("lastIntentExtras").apply()
+                prefsNow.edit().remove("lastIntentExtras").remove("lastPreciseDisconnectBy").apply()
 
                 val logEntity = com.example.callcentermonitor.data.CallLogEntity(
                     phoneNumber = number,

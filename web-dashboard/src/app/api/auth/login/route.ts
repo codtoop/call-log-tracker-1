@@ -59,13 +59,13 @@ export async function POST(request: Request) {
         // Also create/update the activity session (AgentSession)
         console.log('Checking for recent activity session...');
         const now = new Date();
-        const twoMinutesAgo = new Date(now.getTime() - 120000);
+        const strictThreshold = new Date(now.getTime() - 40000); // 40 seconds
         const lastActivitySession = await prisma.agentSession.findFirst({
             where: { agentId: user.id },
             orderBy: { endTime: 'desc' }
         });
 
-        if (lastActivitySession && lastActivitySession.endTime >= twoMinutesAgo) {
+        if (lastActivitySession && lastActivitySession.endTime >= strictThreshold) {
             await prisma.agentSession.update({
                 where: { id: lastActivitySession.id },
                 data: { endTime: now }

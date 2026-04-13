@@ -83,6 +83,44 @@ object ApiService {
         }
     }
 
+    fun pushDailySyncBatch(context: Context, logs: List<com.example.callcentermonitor.data.CallLogEntity>): Boolean {
+        try {
+            val prefs = context.getSharedPreferences("CallMonitorPrefs", Context.MODE_PRIVATE)
+            val serverUrl = prefs.getString("serverUrl", "https://call-log-tracker.vercel.app") ?: "https://call-log-tracker.vercel.app"
+            val appSecret = "daily_sync_app_secret_12345"
+
+            if (serverUrl.isEmpty()) return false
+
+            val jsonArray = org.json.JSONArray()
+            for (log in logs) {
+                val jsonObj = JSONObject()
+                jsonObj.put("phoneNumber", log.phoneNumber)
+                jsonObj.put("type", log.type)
+                jsonObj.put("duration", log.duration)
+                jsonObj.put("ringingDuration", log.ringingDuration)
+                jsonObj.put("timestamp", log.timestamp)
+                jsonObj.put("disconnectedBy", log.disconnectedBy)
+                jsonObj.put("metadata", log.metadata ?: JSONObject.NULL)
+                jsonArray.put(jsonObj)
+            }
+
+            val body = jsonArray.toString().toRequestBody(JSON)
+            val request = Request.Builder()
+                .url("$serverUrl/api/logs/daily-sync")
+                .header("x-app-secret", appSecret)
+                .post(body)
+                .build()
+
+            val response = client.newCall(request).execute()
+            val isSuccess = response.isSuccessful
+            response.close()
+            return isSuccess
+        } catch (e: Exception) {
+            Log.e("ApiService", "Exception inside pushDailySyncBatch: ${e.message}", e)
+            return false
+        }
+    }
+
     fun sendHeartbeat(context: Context): Boolean {
         try {
             val prefs = context.getSharedPreferences("CallMonitorPrefs", Context.MODE_PRIVATE)

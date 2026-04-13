@@ -1,15 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.callcentermonitor"
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:name=".CallMonitorApp"
@@ -29,9 +36,24 @@
             android:theme="@style/Theme.CallCenterMonitor">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- These intent filters identify the app as a Dialer -->
+            <intent-filter>
+                <action android:name="android.intent.action.DIAL" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="tel" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.DIAL" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity android:name=".CallActivity" android:exported="true" android:launchMode="singleInstance" android:theme="@style/Theme.CallCenterMonitor" 
+                  android:showWhenLocked="true" 
+                  android:turnScreenOn="true">
+            
         </activity>
         
         <receiver android:name=".CallReceiver" android:exported="true">
@@ -44,7 +66,22 @@
             android:name=".HeartbeatService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                      android:value="Tracking agent online status for call center" />
+        </service>
+
+        <!-- InCallService to control ongoing calls and intercept DisconnectCause -->
+        <service android:name=".CallCenterInCallService"
+                 android:permission="android.permission.BIND_INCALL_SERVICE"
+                 android:foregroundServiceType="phoneCall"
+                 android:exported="true">
+            <meta-data android:name="android.telecom.IN_CALL_SERVICE_UI" android:value="true" />
+            <meta-data android:name="android.telecom.IN_CALL_SERVICE_RINGING" android:value="false" />
+            <intent-filter>
+                <action android:name="android.telecom.InCallService" />
+            </intent-filter>
+        </service>
     </application>
 
 </manifest>

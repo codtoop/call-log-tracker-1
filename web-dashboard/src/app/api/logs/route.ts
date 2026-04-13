@@ -126,6 +126,9 @@ export async function GET(request: Request) {
         let startDate = searchParams.get('startDate');
         let endDate = searchParams.get('endDate');
         let phoneNumber = searchParams.get('phoneNumber');
+        let durationOperator = searchParams.get('durationOperator'); // 'eq', 'gt', 'lt'
+        let durationValue = searchParams.get('durationValue');
+        let disconnectedBy = searchParams.get('disconnectedBy'); // 'CLIENT', 'AGENT', 'UNKNOWN'
 
         const payload = getAuthPayloadFromRequest(request);
         if (!payload) {
@@ -146,6 +149,17 @@ export async function GET(request: Request) {
         }
         if (phoneNumber) {
             whereClause.phoneNumber = { contains: phoneNumber };
+        }
+        if (disconnectedBy && disconnectedBy !== 'ALL') {
+            whereClause.disconnectedBy = disconnectedBy;
+        }
+        if (durationOperator && durationValue) {
+            const val = parseInt(durationValue, 10);
+            if (!isNaN(val)) {
+                if (durationOperator === 'gt') whereClause.duration = { gt: val };
+                else if (durationOperator === 'lt') whereClause.duration = { lt: val };
+                else if (durationOperator === 'eq') whereClause.duration = val;
+            }
         }
 
         if (startDate || endDate) {

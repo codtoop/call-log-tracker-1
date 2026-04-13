@@ -36,6 +36,10 @@ function DashboardContent() {
   const [phoneNumber, setPhoneNumber] = useState<string>(searchParams.get('phoneNumber') || '');
   const [startDate, setStartDate] = useState<string>(searchParams.get('startDate') || defaultStartDate);
   const [endDate, setEndDate] = useState<string>(searchParams.get('endDate') || defaultEndDate);
+  
+  const [durationOperator, setDurationOperator] = useState<string>(searchParams.get('durationOperator') || 'eq');
+  const [durationValue, setDurationValue] = useState<string>(searchParams.get('durationValue') || '');
+  const [disconnectedByFilter, setDisconnectedByFilter] = useState<string>(searchParams.get('disconnectedBy') || 'ALL');
 
   // Storage for accurate graphing & stats (unpaginated)
   const [allFilteredLogs, setAllFilteredLogs] = useState<any[]>([]);
@@ -121,7 +125,7 @@ function DashboardContent() {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [token, role, limit, page, selectedAgent, startDate, endDate, phoneNumber]); // Added token to dependencies
+  }, [token, role, limit, page, selectedAgent, startDate, endDate, phoneNumber, durationOperator, durationValue, disconnectedByFilter]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -162,6 +166,9 @@ function DashboardContent() {
       if (phoneNumber) params.set('phoneNumber', phoneNumber);
       if (startDate) params.set('startDate', startDate);
       if (endDate) params.set('endDate', endDate);
+      if (durationOperator) params.set('durationOperator', durationOperator);
+      if (durationValue) params.set('durationValue', durationValue);
+      if (disconnectedByFilter && disconnectedByFilter !== 'ALL') params.set('disconnectedBy', disconnectedByFilter);
       params.set('t', Date.now().toString());
 
       const res = await fetch(`/api/logs?${params.toString()}`, {
@@ -519,7 +526,7 @@ function DashboardContent() {
           )}
 
           {/* Filters Area */}
-          <div className={`grid grid-cols-1 ${role === 'ADMIN' ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-6 mb-6`}>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 xl:gap-4 gap-6 mb-6">
             {/* Agent Filter */}
             {role === 'ADMIN' && (
               <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 shadow-sm">
@@ -596,6 +603,61 @@ function DashboardContent() {
                   className="w-1/2 bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-md focus:ring-indigo-500 focus:border-indigo-500 block p-2.5"
                 />
               </div>
+            </div>
+
+            {/* Duration Filter */}
+            <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 shadow-sm">
+              <label className="flex items-center text-sm font-medium text-pink-400 mb-2">
+                <span className="mr-2">⏱️</span> Filter by Duration:
+              </label>
+              <div className="flex space-x-2">
+                <select
+                  value={durationOperator}
+                  onChange={(e) => {
+                    setDurationOperator(e.target.value);
+                    setPage(1);
+                    updateUrlParams({ durationOperator: e.target.value, page: '1' });
+                  }}
+                  className="w-2/5 bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-md focus:ring-indigo-500 focus:border-indigo-500 block p-2.5"
+                >
+                  <option value="eq">Equal (=)</option>
+                  <option value="gt">More than (&gt;)</option>
+                  <option value="lt">Less than (&lt;)</option>
+                </select>
+                <input
+                  type="number"
+                  min="0"
+                  value={durationValue}
+                  onChange={(e) => {
+                    setDurationValue(e.target.value);
+                    setPage(1);
+                    updateUrlParams({ durationValue: e.target.value, page: '1' });
+                  }}
+                  placeholder="Seconds..."
+                  className="w-3/5 bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-md focus:ring-indigo-500 focus:border-indigo-500 block p-2.5"
+                />
+              </div>
+            </div>
+
+            {/* Disconnected By Filter */}
+            <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 shadow-sm">
+              <label className="flex items-center text-sm font-medium text-emerald-400 mb-2">
+                <span className="mr-2">🔌</span> Disconnected By:
+              </label>
+              <select
+                value={disconnectedByFilter}
+                onChange={(e) => {
+                  setDisconnectedByFilter(e.target.value);
+                  setPage(1);
+                  updateUrlParams({ disconnectedBy: e.target.value, page: '1' });
+                }}
+                className="w-full bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-md focus:ring-indigo-500 focus:border-indigo-500 block p-2.5"
+              >
+                <option value="ALL">All (Ignore)</option>
+                <option value="AGENT">Agent</option>
+                <option value="CLIENT">Client</option>
+                <option value="UNKNOWN">Unknown</option>
+              </select>
             </div>
           </div>
 
